@@ -1,4 +1,6 @@
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const {
   Client,
   GatewayIntentBits,
@@ -21,91 +23,69 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-/* ================== CONFIG ================== */
-const VERIFY_ROLE_NAME = "Verified";
-const STAFF_ROLE_NAME = "Staff";
-const TICKET_CATEGORY_NAME = "Tickets";
-const LOG_CHANNEL_NAME = "bot-logs";
-/* ============================================ */
+/* ================= CONFIG ================= */
+
+const LOG_CHANNEL_ID = "1471862953702850731";
+
+const VERIFIED_ROLE_ID = "1471869407432020000";
+const UNVERIFIED_ROLE_ID = "1471868909408751832";
+
+const STAFF_ROLE_IDS = [
+  "1471862618280038536", // mod
+  "1471862614652092604", // admin
+  "1471863675513077791"  // owner
+];
+
+const TICKET_CATEGORY_NAME = "🎟 tickets";
+const TRANSCRIPT_DIR = "./transcripts";
+
+if (!fs.existsSync(TRANSCRIPT_DIR)) fs.mkdirSync(TRANSCRIPT_DIR);
+
+/* ========================================== */
 
 client.once("ready", () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`✅ MMS BOT ONLINE: ${client.user.tag}`);
 });
 
-/* ============ COMMANDS ============ */
+/* ============ AUTO UNVERIFY ON LEAVE ============ */
+client.on("guildMemberRemove", async (member) => {
+  const log = member.guild.channels.cache.get(LOG_CHANNEL_ID);
+  if (log) log.send(`🚪 **LEFT:** ${member.user.tag} | Auto-unverify applied`);
+});
+
+/* ============ INTERACTIONS ============ */
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
-  /* ===== SLASH COMMANDS ===== */
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "verify-panel") {
-      const embed = new EmbedBuilder()
-        .setTitle("✅ Server Verification")
-        .setDescription("Click the button below to verify and access the server.")
-        .setColor("Green");
+  const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("verify_btn")
-          .setLabel("Verify")
-          .setStyle(ButtonStyle.Success)
-      );
+  /* ================= BUTTONS ================= */
 
-      return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    if (interaction.commandName === "ticket-panel") {
-      const embed = new EmbedBuilder()
-        .setTitle("🎟 Support Tickets")
-        .setDescription("Choose a category to open a ticket")
-        .setColor("Blue");
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("ticket_general")
-          .setLabel("General")
-          .setStyle(ButtonStyle.Primary),
-
-        new ButtonBuilder()
-          .setCustomId("ticket_support")
-          .setLabel("Support")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("ticket_report")
-          .setLabel("Report")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      return interaction.reply({ embeds: [embed], components: [row] });
-    }
-  }
-
-  /* ===== BUTTONS ===== */
   if (interaction.isButton()) {
 
-    /* ===== VERIFICATION ===== */
+    /* ===== VERIFY ===== */
     if (interaction.customId === "verify_btn") {
-      const role = interaction.guild.roles.cache.find(r => r.name === VERIFY_ROLE_NAME);
-      if (!role) return interaction.reply({ content: "❌ Verify role not found", ephemeral: true });
-
-      if (interaction.member.roles.cache.has(role.id)) {
-        return interaction.reply({ content: "✅ You are already verified.", ephemeral: true });
+      const accountAge = Date.now() - interaction.user.createdTimestamp;
+      if (accountAge < 1000 * 60 * 60 * 24) {
+        return interaction.reply({ content: "❌ Account too new to verify.", ephemeral: true });
       }
 
-      await interaction.member.roles.add(role);
+      if (interaction.member.roles.cache.has(VERIFIED_ROLE_ID)) {
+        return interaction.reply({ content: "✅ Already verified.", ephemeral: true });
+      }
 
-      const log = interaction.guild.channels.cache.find(c => c.name === LOG_CHANNEL_NAME);
-      if (log) log.send(`✅ ${interaction.user.tag} verified`);
+      await interaction.member.roles.remove(UNVERIFIED_ROLE_ID).catch(()=>{});
+      await interaction.member.roles.add(VERIFIED_ROLE_ID);
 
-      return interaction.reply({ content: "🎉 You are now verified!", ephemeral: true });
+      if (logChannel) logChannel.send(`✅ **VERIFIED:** ${interaction.user.tag}`);
+
+      return interaction.reply({ content: "🎉 Verification successful!", ephemeral: true });
     }
 
-    /* ===== TICKETS ===== */
+    /* ===== TICKET CREATE ===== */
     if (interaction.customId.startsWith("ticket_")) {
       const type = interaction.customId.split("_")[1];
 
-      const staffRole = interaction.guild.roles.cache.find(r => r.name === STAFF_ROLE_NAME);
       let category = interaction.guild.channels.cache.find(
         c => c.name === TICKET_CATEGORY_NAME && c.type === ChannelType.GuildCategory
       );
@@ -122,55 +102,76 @@ client.on("interactionCreate", async (interaction) => {
         type: ChannelType.GuildText,
         parent: category.id,
         permissionOverwrites: [
-          {
-            id: interaction.guild.id,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: interaction.user.id,
+          { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+          ...STAFF_ROLE_IDS.map(id => ({
+            id,
             allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-          },
-          staffRole && {
-            id: staffRole.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-          }
-        ].filter(Boolean)
+          }))
+        ]
       });
 
       const embed = new EmbedBuilder()
-        .setTitle(`🎟 ${type.toUpperCase()} Ticket`)
-        .setDescription("Staff will assist you shortly.\nUse buttons below to manage ticket.")
-        .setColor("Purple");
+        .setTitle("🎟 Support Ticket")
+        .setDescription("Staff will assist you.\nUse controls below.")
+        .setColor("Blue");
 
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("ticket_close")
-          .setLabel("Close")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("ticket_delete")
-          .setLabel("Delete")
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId("ticket_claim").setLabel("Claim").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("ticket_close").setLabel("Close").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("ticket_delete").setLabel("Delete").setStyle(ButtonStyle.Danger)
       );
 
       await channel.send({ content: `<@${interaction.user.id}>`, embeds: [embed], components: [row] });
 
+      if (logChannel) logChannel.send(`🎟 **TICKET OPENED:** ${interaction.user.tag}`);
+
       return interaction.reply({ content: `🎟 Ticket created: ${channel}`, ephemeral: true });
     }
 
-    /* ===== CLOSE TICKET ===== */
+    /* ===== CLAIM ===== */
+    if (interaction.customId === "ticket_claim") {
+      if (!STAFF_ROLE_IDS.some(id => interaction.member.roles.cache.has(id))) {
+        return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
+      }
+
+      if (logChannel) logChannel.send(`👮 **CLAIMED:** ${interaction.user.tag} claimed ${interaction.channel.name}`);
+
+      return interaction.reply(`👮 Ticket claimed by ${interaction.user.tag}`);
+    }
+
+    /* ===== CLOSE ===== */
     if (interaction.customId === "ticket_close") {
-      await interaction.channel.permissionOverwrites.edit(interaction.user.id, {
+      await interaction.channel.permissionOverwrites.edit(interaction.guild.id, {
         SendMessages: false
       });
+
+      if (logChannel) logChannel.send(`🔒 **CLOSED:** ${interaction.channel.name}`);
 
       return interaction.reply("🔒 Ticket closed.");
     }
 
-    /* ===== DELETE TICKET ===== */
+    /* ===== DELETE + TRANSCRIPT ===== */
     if (interaction.customId === "ticket_delete") {
-      await interaction.reply("🗑 Deleting ticket...");
+
+      const messages = await interaction.channel.messages.fetch({ limit: 100 });
+      let transcript = `Transcript: ${interaction.channel.name}\n\n`;
+
+      messages.reverse().forEach(m => {
+        transcript += `[${new Date(m.createdTimestamp).toLocaleString()}] ${m.author.tag}: ${m.content}\n`;
+      });
+
+      const filePath = path.join(TRANSCRIPT_DIR, `${interaction.channel.id}.txt`);
+      fs.writeFileSync(filePath, transcript);
+
+      if (logChannel) {
+        logChannel.send({
+          content: `🗑 **TICKET DELETED:** ${interaction.channel.name}`,
+          files: [filePath]
+        });
+      }
+
+      await interaction.reply("🗑 Ticket deleted & transcript saved.");
       setTimeout(() => interaction.channel.delete(), 2000);
     }
   }
