@@ -1,6 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const express = require("express");
 const {
   Client,
   GatewayIntentBits,
@@ -10,8 +11,22 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType
+  ChannelType,
+  Events
 } = require("discord.js");
+
+/* ================= EXPRESS (RENDER PORT) ================= */
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("MMS BOT ONLINE ✅");
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
+});
+/* ========================================================= */
 
 const client = new Client({
   intents: [
@@ -30,6 +45,11 @@ const USER_ROLE_IDS = [
   "1471869407432020000"  // verified
 ];
 
+const STAFF_ROLE_IDS = [
+  "1471862618280038536", // mod
+  "1471862614652092604", // admin
+  "1471863675513077791"  // owner
+];
 
 function isUser(member) {
   return USER_ROLE_IDS.some(id => member.roles.cache.has(id));
@@ -39,17 +59,10 @@ function isStaff(member) {
   return STAFF_ROLE_IDS.some(id => member.roles.cache.has(id));
 }
 
-
 const LOG_CHANNEL_ID = "1471862953702850731";
 
 const VERIFIED_ROLE_ID = "1471869407432020000";
 const UNVERIFIED_ROLE_ID = "1471868909408751832";
-
-const STAFF_ROLE_IDS = [
-  "1471862618280038536", // mod
-  "1471862614652092604", // admin
-  "1471863675513077791"  // owner
-];
 
 const TICKET_CATEGORY_NAME = "🎟 tickets";
 const TRANSCRIPT_DIR = "./transcripts";
@@ -60,6 +73,15 @@ if (!fs.existsSync(TRANSCRIPT_DIR)) fs.mkdirSync(TRANSCRIPT_DIR);
 
 client.once("ready", () => {
   console.log(`✅ MMS BOT ONLINE: ${client.user.tag}`);
+});
+
+/* ============ BOT MENTION RESPONDER ============ */
+client.on(Events.MessageCreate, (message) => {
+  if (message.author.bot) return;
+
+  if (message.mentions.has(client.user.id)) {
+    message.reply("👋 What's up! Need help? Use the ticket or verify panels.");
+  }
 });
 
 /* ============ AUTO UNVERIFY ON LEAVE ============ */
@@ -80,6 +102,11 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== VERIFY ===== */
     if (interaction.customId === "verify_btn") {
+
+      if (!isUser(interaction.member)) {
+        return interaction.reply({ content: "❌ Students/Verified only.", ephemeral: true });
+      }
+
       const accountAge = Date.now() - interaction.user.createdTimestamp;
       if (accountAge < 1000 * 60 * 60 * 24) {
         return interaction.reply({ content: "❌ Account too new to verify.", ephemeral: true });
@@ -99,6 +126,11 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== TICKET CREATE ===== */
     if (interaction.customId.startsWith("ticket_")) {
+
+      if (!isUser(interaction.member)) {
+        return interaction.reply({ content: "❌ Only students/verified can open tickets.", ephemeral: true });
+      }
+
       const type = interaction.customId.split("_")[1];
 
       let category = interaction.guild.channels.cache.find(
@@ -113,7 +145,7 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       const channel = await interaction.guild.channels.create({
-        name: `ticket-${interaction.user.username}`,
+        name: `ticket-${interaction.user.username.toLowerCase()}`,
         type: ChannelType.GuildText,
         parent: category.id,
         permissionOverwrites: [
@@ -146,7 +178,7 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== CLAIM ===== */
     if (interaction.customId === "ticket_claim") {
-      if (!STAFF_ROLE_IDS.some(id => interaction.member.roles.cache.has(id))) {
+      if (!isStaff(interaction.member)) {
         return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
       }
 
@@ -157,6 +189,10 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== CLOSE ===== */
     if (interaction.customId === "ticket_close") {
+      if (!isStaff(interaction.member)) {
+        return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
+      }
+
       await interaction.channel.permissionOverwrites.edit(interaction.guild.id, {
         SendMessages: false
       });
@@ -168,9 +204,10 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== DELETE + TRANSCRIPT ===== */
     if (interaction.customId === "ticket_delete") {
-if (!isStaff(interaction.member)) {
-  return interaction.reply({ content: "❌ Staff only command.", ephemeral: true });
-}
+
+      if (!isStaff(interaction.member)) {
+        return interaction.reply({ content: "❌ Staff only command.", ephemeral: true });
+      }
 
       const messages = await interaction.channel.messages.fetch({ limit: 100 });
       let transcript = `Transcript: ${interaction.channel.name}\n\n`;
