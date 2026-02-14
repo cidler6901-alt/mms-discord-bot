@@ -25,6 +25,26 @@ const client = new Client({
 
 /* ================= CONFIG ================= */
 
+const USER_ROLE_IDS = [
+  "1471862626798669866", // student
+  "1471869407432020000"  // verified
+];
+
+const STAFF_ROLE_IDS = [
+  "1471862618280038536", // mod
+  "1471862614652092604", // admin
+  "1471863675513077791"  // owner
+];
+
+function isUser(member) {
+  return USER_ROLE_IDS.some(id => member.roles.cache.has(id));
+}
+
+function isStaff(member) {
+  return STAFF_ROLE_IDS.some(id => member.roles.cache.has(id));
+}
+
+
 const LOG_CHANNEL_ID = "1471862953702850731";
 
 const VERIFIED_ROLE_ID = "1471869407432020000";
