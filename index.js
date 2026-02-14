@@ -173,6 +173,9 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== DELETE + TRANSCRIPT ===== */
     if (interaction.customId === "ticket_delete") {
+if (!isStaff(interaction.member)) {
+  return interaction.reply({ content: "❌ Staff only command.", ephemeral: true });
+}
 
       const messages = await interaction.channel.messages.fetch({ limit: 100 });
       let transcript = `Transcript: ${interaction.channel.name}\n\n`;
