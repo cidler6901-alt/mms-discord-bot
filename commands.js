@@ -2,7 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const config = require('./config.json');
 
 const commands = [
-  new SlashCommandBuilder().setName('Ping').setDescription('Ping'),
+  new SlashCommandBuilder().setName('ping1').setDescription('Ping'),
 
   new SlashCommandBuilder().setName('verify').setDescription('Verify yourself'),
 
