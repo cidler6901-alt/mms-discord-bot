@@ -30,11 +30,6 @@ const USER_ROLE_IDS = [
   "1471869407432020000"  // verified
 ];
 
-const STAFF_ROLE_IDS = [
-  "1471862618280038536", // mod
-  "1471862614652092604", // admin
-  "1471863675513077791"  // owner
-];
 
 function isUser(member) {
   return USER_ROLE_IDS.some(id => member.roles.cache.has(id));
